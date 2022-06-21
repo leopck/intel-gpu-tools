@@ -367,8 +367,9 @@ static void ring_print(struct ring *ring, unsigned long samples_per_sec)
 		return;
 
 	percent_busy = 100 - 100 * ring->idle / samples_per_sec;
+	printf("This is the percent busy: %d\n", percent_busy);
 
-	len = printf("%25s busy: %3d%%: ", ring->name, percent_busy);
+	len = printf("%25s stanley busy: %3d%%: ", ring->name, percent_busy);
 	print_percentage_bar (percent_busy, len);
 	printf("%24s space: %d/%d\n",
 		   ring->name,
@@ -432,7 +433,7 @@ int main(int argc, char **argv)
 	pid_t child_pid=-1;
 	int child_stat;
 	char *cmd=NULL;
-	int interactive=1;
+	int interactive=0;
 
 	/* Parse options? */
 	while ((ch = getopt(argc, argv, "s:o:e:h")) != -1) {
@@ -613,6 +614,10 @@ int main(int argc, char **argv)
 
 		t2 = gettime();
 		elapsed_time += (t2 - t1) / 1000000.0;
+			ring_print(&render_ring, last_samples_per_sec);
+			ring_print(&bsd_ring, last_samples_per_sec);
+			ring_print(&bsd6_ring, last_samples_per_sec);
+			ring_print(&blt_ring, last_samples_per_sec);
 
 		if (interactive) {
 			printf("%s", clear_screen);
