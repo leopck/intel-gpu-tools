@@ -21,6 +21,7 @@ bin_PROGRAMS = 				\
 	intel_firmware_decode		\
 	intel_gpu_time 			\
 	intel_gpu_top 			\
+	intel_gpu_monitor		\
 	intel_gtt 			\
 	intel_infoframes		\
 	intel_l3_parity			\
