@@ -31,6 +31,9 @@
 #include <stdarg.h>
 #include <fcntl.h>
 #include <sys/types.h>
+#ifndef major
+#include <sys/sysmacros.h>
+#endif
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
