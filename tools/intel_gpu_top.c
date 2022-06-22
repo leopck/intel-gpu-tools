@@ -42,6 +42,7 @@
 #ifdef HAVE_TERMIOS_H
 #include <termios.h>
 #endif
+#include <zmq.h>
 #include "intel_io.h"
 #include "instdone.h"
 #include "intel_reg.h"
@@ -56,6 +57,13 @@
 #define MAX_NUM_TOP_BITS            100
 
 #define HAS_STATS_REGS(devid)		IS_965(devid)
+
+const unsigned int REPETITIONS = 10;
+const unsigned int PACKET_SIZE = 1;
+const char *TOPIC = "fancyhw_data";
+void *data_socket;
+const size_t topic_size = 12;
+const size_t envelope_size = topic_size + 1 + PACKET_SIZE * sizeof(int16_t);
 
 struct top_bit {
 	struct instdone_bit *bit;
@@ -369,6 +377,43 @@ static void ring_print(struct ring *ring, unsigned long samples_per_sec)
 	percent_busy = 100 - 100 * ring->idle / samples_per_sec;
 	printf("This is the percent busy: %d\n", percent_busy);
 
+	int16_t buffer[PACKET_SIZE];
+
+	for (unsigned int j = 0; j < PACKET_SIZE; j++)
+	{
+		buffer[j] = percent_busy;
+	}
+
+	printf("Read %u data values\n", PACKET_SIZE);
+
+	zmq_msg_t envelope;
+
+	const int rmi = zmq_msg_init_size(&envelope, envelope_size);
+	if (rmi != 0)
+	{
+		printf("ERROR: ZeroMQ error occurred during zmq_msg_init_size(): %s\n", zmq_strerror(errno));
+
+		zmq_msg_close(&envelope);
+	}
+
+	memcpy(zmq_msg_data(&envelope), TOPIC, topic_size);
+
+	memcpy((void*)((char*)zmq_msg_data(&envelope) + topic_size), " ", 1);
+
+	memcpy((void*)((char*)zmq_msg_data(&envelope) + 1 + topic_size), buffer, PACKET_SIZE * sizeof(int16_t));
+
+	const size_t rs = zmq_msg_send(&envelope, data_socket, 0);
+	if (rs != envelope_size)
+	{
+		printf("ERROR: ZeroMQ error occurred during zmq_msg_send(): %s\n", zmq_strerror(errno));
+
+		zmq_msg_close(&envelope);
+	}
+
+	zmq_msg_close(&envelope);
+
+	printf("Message sent; percent_busy: %u, topic: %s\n", percent_busy, TOPIC);
+
 	len = printf("%25s stanley busy: %3d%%: ", ring->name, percent_busy);
 	print_percentage_bar (percent_busy, len);
 	printf("%24s space: %d/%d\n",
@@ -434,6 +479,27 @@ int main(int argc, char **argv)
 	int child_stat;
 	char *cmd=NULL;
 	int interactive=0;
+
+	void *context = zmq_ctx_new();
+    if (!context)
+    {
+        printf("ERROR: ZeroMQ error occurred during zmq_ctx_new(): %s\n", zmq_strerror(errno));
+
+        return EXIT_FAILURE;
+    }
+
+    data_socket = zmq_socket(context, ZMQ_PUB);
+
+    const int rb = zmq_bind(data_socket, "tcp://*:5555");
+
+    if (rb != 0)
+    {
+        printf("ERROR: ZeroMQ error occurred during zmq_ctx_new(): %s\n", zmq_strerror(errno));
+
+        return EXIT_FAILURE;
+    }
+
+    printf("Topic: %s; topic size: %zu; Envelope size: %zu\n", TOPIC, topic_size, envelope_size);
 
 	/* Parse options? */
 	while ((ch = getopt(argc, argv, "s:o:e:h")) != -1) {
@@ -614,10 +680,10 @@ int main(int argc, char **argv)
 
 		t2 = gettime();
 		elapsed_time += (t2 - t1) / 1000000.0;
-			ring_print(&render_ring, last_samples_per_sec);
-			ring_print(&bsd_ring, last_samples_per_sec);
-			ring_print(&bsd6_ring, last_samples_per_sec);
-			ring_print(&blt_ring, last_samples_per_sec);
+		ring_print(&render_ring, last_samples_per_sec);
+		ring_print(&bsd_ring, last_samples_per_sec);
+		ring_print(&bsd6_ring, last_samples_per_sec);
+		ring_print(&blt_ring, last_samples_per_sec);
 
 		if (interactive) {
 			printf("%s", clear_screen);
@@ -719,5 +785,23 @@ int main(int argc, char **argv)
 	fclose(output);
 
 	intel_register_access_fini();
-	return 0;
+	const int rc = zmq_close(data_socket);
+
+    if (rc != 0)
+    {
+        printf("ERROR: ZeroMQ error occurred during zmq_close(): %s\n", zmq_strerror(errno));
+
+        return EXIT_FAILURE;
+    }
+
+    const int rd = zmq_ctx_destroy(context);
+
+    if (rd != 0)
+    {
+        printf("Error occurred during zmq_ctx_destroy(): %s\n", zmq_strerror(errno));
+
+        return EXIT_FAILURE;
+    }
+
+    return EXIT_SUCCESS;
 }
